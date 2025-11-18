@@ -1,0 +1,78 @@
+{
+  "task_name": "Untitled Task",
+  "description": "",
+  "created_date": "2025-11-11 16:25:05",
+  "version": "1.0",
+  "actions": [
+    {
+      "id": 1,
+      "type": "move_to_position",
+      "parameters": {
+        "position_name": "waypoint1",
+        "speed_percent": 50,
+        "move_type": "moveJ",
+        "tcp_pose": [
+          0.5596079628358784,
+          -0.1733716149508668,
+          0.4623616306563958,
+          -0.9452678432092158,
+          2.9764124652154154,
+          -0.052734735889999856
+        ]
+      },
+      "description": "Add a waypoint with custom speed and movement type"
+    },
+    {
+      "id": 3,
+      "type": "wait",
+      "parameters": {
+        "seconds": 5
+      },
+      "description": "Pause for specified time"
+    },
+    {
+      "id": 2,
+      "type": "move_to_position",
+      "parameters": {
+        "position_name": "waypoint2",
+        "speed_percent": 50,
+        "move_type": "moveJ",
+        "tcp_pose": [
+          0.5595971521875428,
+          -0.17340446774949878,
+          0.4122613056530988,
+          -0.9451643493539672,
+          2.9764854615223895,
+          -0.05283802120963897
+        ]
+      },
+      "description": "Add a waypoint with custom speed and movement type"
+    },
+    {
+      "id": 4,
+      "type": "wait",
+      "parameters": {
+        "seconds": 5
+      },
+      "description": "Pause for specified time"
+    },
+    {
+      "id": 5,
+      "type": "move_to_position",
+      "parameters": {
+        "position_name": "waypoint3",
+        "speed_percent": 50,
+        "move_type": "moveJ",
+        "tcp_pose": [
+          0.5596071745852254,
+          -0.17338870245531493,
+          0.34595406912203525,
+          -0.9453142418263202,
+          2.976449482784944,
+          -0.05273992078945842
+        ]
+      },
+      "description": "Add a waypoint with custom speed and movement type"
+    }
+  ]
+}

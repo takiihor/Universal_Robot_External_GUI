@@ -1,0 +1,78 @@
+{
+  "task_name": "Hand Guiding Example",
+  "description": "Demonstrates using hand guiding to teach positions and then move to them",
+  "created_date": "2025-11-10 14:00:00",
+  "version": "1.0",
+  "actions": [
+    {
+      "id": 1,
+      "type": "return_home",
+      "parameters": {
+        "speed": "medium"
+      },
+      "description": "Return to safe starting position"
+    },
+    {
+      "id": 2,
+      "type": "enable_freedrive",
+      "parameters": {},
+      "description": "Enable hand guiding mode - user can manually move robot"
+    },
+    {
+      "id": 3,
+      "type": "wait",
+      "parameters": {
+        "seconds": 10
+      },
+      "description": "Wait 10 seconds for user to move robot to target position"
+    },
+    {
+      "id": 4,
+      "type": "disable_freedrive",
+      "parameters": {},
+      "description": "End manual movement mode"
+    },
+    {
+      "id": 5,
+      "type": "save_position",
+      "parameters": {
+        "position_name": "taught_position_1",
+        "description": "Position taught by hand guiding"
+      },
+      "description": "Save the current position"
+    },
+    {
+      "id": 6,
+      "type": "return_home",
+      "parameters": {
+        "speed": "medium"
+      },
+      "description": "Return to home position"
+    },
+    {
+      "id": 7,
+      "type": "wait",
+      "parameters": {
+        "seconds": 2
+      },
+      "description": "Wait 2 seconds"
+    },
+    {
+      "id": 8,
+      "type": "move_to_position",
+      "parameters": {
+        "position_name": "taught_position_1",
+        "speed": "slow"
+      },
+      "description": "Move to the saved position"
+    },
+    {
+      "id": 9,
+      "type": "return_home",
+      "parameters": {
+        "speed": "medium"
+      },
+      "description": "Return to safe starting position"
+    }
+  ]
+}

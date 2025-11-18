@@ -1,0 +1,11 @@
+# Example URScript
+# This is a placeholder script file
+# You can add your custom URScript files here
+
+def example_program():
+  # Move to home position
+  movej([0, -1.57, 1.57, -1.57, -1.57, 0], a=1.0, v=0.5)
+
+  # Wait for 1 second
+  sleep(1.0)
+end

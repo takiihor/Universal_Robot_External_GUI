@@ -1,0 +1,29 @@
+# UR10e 控制 UI 系統依賴套件清單
+# 優化版本 - 避免 PyQt5 編譯卡住問題
+# Python 版本要求: >=3.8, <3.13
+
+# ===== GUI 框架 =====
+# 固定版本避免編譯問題,使用預編譯的 wheel
+PyQt5==5.15.10
+PyQt5-Qt5==5.15.2
+PyQt5-sip==12.13.0
+
+# ===== 即時圖表 =====
+pyqtgraph==0.13.3
+
+# ===== UR 機器人 RTDE 通訊 =====
+ur-rtde==1.5.7
+
+# ===== 數學運算與資料處理 =====
+numpy==1.24.3
+scipy==1.10.1
+
+# ===== 安裝說明 =====
+# 如果 PyQt5 安裝仍然卡住,請使用以下命令:
+# pip install --upgrade pip setuptools wheel
+# pip install PyQt5==5.15.10 --only-binary=PyQt5
+# pip install -r requirements.txt
+
+# 或使用系統套件管理器安裝 PyQt5:
+# Ubuntu/Debian: sudo apt-get install python3-pyqt5
+# 然後註解掉上面的 PyQt5 行再安裝其他套件

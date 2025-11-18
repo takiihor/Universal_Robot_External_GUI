@@ -1,0 +1,36 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+.env/
+
+# Logs and runtime data
+logs/
+*.log
+
+# Editor and tooling metadata
+.vscode/
+.idea/
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Archives and large binary bundles
+*.zip
+*.tar
+*.gz
+*.bz2
+*.7z
+files (1).zip:Zone.Identifier
+
+# Local assets and backups not needed in git
+Pictures/
+presets/backups/
+tasks/*.future_massage_controller

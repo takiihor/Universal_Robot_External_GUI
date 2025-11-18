@@ -1,0 +1,61 @@
+{
+  "task_name": "Pick and Place Example",
+  "description": "Demonstrates how to use the Sequential Controller for pick and place operations",
+  "created_date": "2025-11-10 14:00:00",
+  "version": "1.0",
+  "actions": [
+    {
+      "id": 1,
+      "type": "return_home",
+      "parameters": {
+        "speed": "medium"
+      },
+      "description": "Return to home position"
+    },
+    {
+      "id": 2,
+      "type": "move_to_position",
+      "parameters": {
+        "position_name": "home",
+        "speed": "slow"
+      },
+      "description": "Move above the object (using preset position)"
+    },
+    {
+      "id": 3,
+      "type": "relative_move",
+      "parameters": {
+        "direction": "down",
+        "distance_cm": 10,
+        "speed": "slow"
+      },
+      "description": "Move down 10 cm"
+    },
+    {
+      "id": 4,
+      "type": "wait",
+      "parameters": {
+        "seconds": 2
+      },
+      "description": "Wait 2 seconds for stabilization"
+    },
+    {
+      "id": 5,
+      "type": "relative_move",
+      "parameters": {
+        "direction": "up",
+        "distance_cm": 15,
+        "speed": "medium"
+      },
+      "description": "Move up 15 cm"
+    },
+    {
+      "id": 6,
+      "type": "return_home",
+      "parameters": {
+        "speed": "medium"
+      },
+      "description": "Return to home position"
+    }
+  ]
+}
