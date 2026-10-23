@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import logging
 
+from force_control.config import ForceConfig
+
 # 設定日誌
 logger = logging.getLogger(__name__)
 
@@ -48,26 +50,6 @@ class Config:
     TCP_STEP_SIZES = [0.001, 0.005, 0.01, 0.05]  # m (1mm, 5mm, 10mm, 50mm)
     JOINT_STEP_SIZES = [0.017453, 0.087266, 0.174533, 0.785398]  # rad (1°, 5°, 10°, 45°)
     ROTATION_STEP_SIZES = [0.017453, 0.087266, 0.174533, 0.261799]  # rad (1°, 5°, 10°, 15°)
-
-    # ========================================
-    # 力控制參數
-    # ========================================
-    DEFAULT_TARGET_FORCE = 2.0  # N (increased from 1.5N for better compliance)
-    DEFAULT_FORCE_GAIN = 0.003
-    DEFAULT_MAX_DISPLACEMENT = 0.03  # m
-    DEFAULT_MAX_FORCE = 10.0  # N
-    DEFAULT_FORCE_TIMEOUT = 20.0  # s
-    MIN_TARGET_FORCE = 0.01  # N
-    MAX_TARGET_FORCE = 50.0  # N
-
-    # 力控制方向 [Fx, Fy, Fz, Tx, Ty, Tz]
-    DEFAULT_FORCE_DIRECTION = [0, 0, 1, 0, 0, 0]  # Z軸方向
-    DEFAULT_FORCE_LIMITS = [2.0, 2.0, 2.0, 1.0, 1.0, 1.0]  # N or Nm
-
-    # 力控制模式速度限制 [vx, vy, vz, wx, wy, wz]
-    # Linear velocities (m/s), Angular velocities (rad/s)
-    # Higher values = faster compliant movement
-    FORCE_MODE_SPEED_LIMITS = [0.2, 0.2, 0.2, 2.0, 2.0, 2.0]  # Increased for faster response
 
     # ========================================
     # 安全參數
@@ -229,11 +211,11 @@ class Config:
                 'joint_accel': Config.DEFAULT_JOINT_ACCEL
             },
             'force_control': {
-                'target_force': Config.DEFAULT_TARGET_FORCE,
-                'gain': Config.DEFAULT_FORCE_GAIN,
-                'max_displacement': Config.DEFAULT_MAX_DISPLACEMENT,
-                'max_force': Config.DEFAULT_MAX_FORCE,
-                'timeout': Config.DEFAULT_FORCE_TIMEOUT
+                'target_force': ForceConfig.DEFAULT_TARGET_FORCE,
+                'force_type': ForceConfig.DEFAULT_FORCE_TYPE,
+                'linear_speed': ForceConfig.DEFAULT_LINEAR_SPEED,
+                'angular_speed': ForceConfig.DEFAULT_ANGULAR_SPEED,
+                'timeout': ForceConfig.DEFAULT_TIMEOUT
             },
             'safety': {
                 'workspace_limits': Config.WORKSPACE_LIMITS,
@@ -285,7 +267,7 @@ class Config:
 
             # 驗證力控制參數
             force = config_dict['force_control']
-            if not (Config.MIN_TARGET_FORCE <= force.get('target_force', 0) <= Config.MAX_TARGET_FORCE):
+            if not (ForceConfig.MIN_TARGET_FORCE <= force.get('target_force', 0) <= ForceConfig.MAX_TARGET_FORCE):
                 logger.error(f"目標力超出範圍: {force.get('target_force')}")
                 return False
 

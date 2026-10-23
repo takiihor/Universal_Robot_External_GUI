@@ -30,6 +30,7 @@ except ImportError:
     logging.warning("ur_rtde module not installed. Some features will be unavailable.")
 
 from config import Config
+from force_control import ForceController
 from preset_manager import PresetManager
 from utils import check_pose_in_workspace, check_joint_limits
 from error_handler import (
@@ -146,6 +147,10 @@ class RobotController(QObject):
     info_message = pyqtSignal(str)
     reconnection_attempted = pyqtSignal(bool, str)  # success, message
 
+    # Force mode signals
+    force_mode_changed = pyqtSignal(bool, float)  # active, target force (N)
+    force_mode_timeout = pyqtSignal(float, float)  # target force (N), timeout (s)
+
     # Trajectory replay signals
     trajectory_replay_started = pyqtSignal(int)  # total_points
     trajectory_replay_progress = pyqtSignal(int, int)  # current_point, total_points
@@ -187,6 +192,13 @@ class RobotController(QObject):
         self.safety_monitor.collision_detected.connect(self._on_collision_detected)
         self.safety_monitor.workspace_warning.connect(self._on_workspace_warning)
         self.safety_monitor.force_warning.connect(self._on_force_warning)
+
+        # Force control (RTDE force mode)
+        self.force_controller = ForceController(
+            on_state_changed=self._on_force_state_changed,
+            on_timeout=self._on_force_timeout,
+            on_error=self.error_occurred.emit,
+        )
 
         # Auto-reconnection settings
         self.enable_auto_reconnect = enable_auto_reconnect
@@ -260,6 +272,8 @@ class RobotController(QObject):
             self.rtde_receive = RTDEReceiveInterface(ip)
             logger.info("RTDE Receive interface established")
 
+            self.force_controller.attach(self.rtde_control)
+
             # Mark as connected
             self._connected = True
 
@@ -313,6 +327,9 @@ class RobotController(QObject):
 
             # Stop data receiver thread
             self.stop_data_streaming()
+
+            # Leave force mode before closing the interfaces
+            self.force_controller.detach()
 
             # Stop any running motion
             if self.rtde_control is not None:
@@ -1086,98 +1103,71 @@ class RobotController(QObject):
     # Force Control Functions
     # ========================================
 
-    def start_force_mode(self, task_frame: List[float] = None,
+    def start_force_mode(self, target_force: float = None,
                         selection_vector: List[int] = None,
-                        wrench: List[float] = None,
-                        force_type: int = 2,
-                        limits: List[float] = None) -> bool:
+                        force_type: int = None,
+                        speed_limits: List[float] = None,
+                        task_frame: List[float] = None,
+                        timeout: float = None) -> bool:
         """
         Start force mode with compliant behavior
 
         Args:
-            task_frame: Task frame pose [x, y, z, rx, ry, rz]
+            target_force: Target force in N (applied along the selected axes)
             selection_vector: Selection vector [Fx, Fy, Fz, Tx, Ty, Tz] (1=active, 0=inactive)
-            wrench: Target wrench [fx, fy, fz, tx, ty, tz] (negative values push down/backward)
-            force_type: Force type (1=no transform, 2=base frame, 3=tool frame)
-            limits: Speed limits [vx, vy, vz, wx, wy, wz] (m/s and rad/s)
+            force_type: 1=Y axis towards task frame origin, 2=task frame used as
+                given, 3=X axis along TCP velocity
+            speed_limits: [vx, vy, vz, wx, wy, wz]; speed on compliant axes,
+                max deviation on non-compliant axes
+            task_frame: Force frame pose [x, y, z, rx, ry, rz]; defaults to the
+                base frame (identity rotation)
+            timeout: Auto-release time in seconds (0 disables)
 
         Returns:
             bool: Success status
         """
-        if not self._connected or self.rtde_control is None:
+        if not self._connected:
             self.error_occurred.emit("Not connected to robot")
             return False
 
-        try:
-            # Use default values if not provided
-            if task_frame is None:
-                current_pose = self.rtde_receive.getActualTCPPose()
-                task_frame = list(current_pose) if current_pose else [0, 0, 0, 0, 0, 0]
-
-            if selection_vector is None:
-                selection_vector = Config.DEFAULT_FORCE_DIRECTION
-
-            if wrench is None:
-                # Default: apply downward force in Z
-                wrench = [0, 0, -Config.DEFAULT_TARGET_FORCE, 0, 0, 0]
-
-            if limits is None:
-                # Use speed limits from config for compliant behavior
-                # Linear velocities (m/s), Angular velocities (rad/s)
-                limits = Config.FORCE_MODE_SPEED_LIMITS
-
-            # Start force mode
-            self.rtde_control.forceMode(task_frame, selection_vector, wrench,
-                                       force_type, limits)
-
+        started = self.force_controller.start(
+            target_force=target_force,
+            selection_vector=selection_vector,
+            force_type=force_type,
+            speed_limits=speed_limits,
+            task_frame=task_frame,
+            timeout=timeout,
+        )
+        if started:
             self.info_message.emit("Force mode started - robot will comply with external forces")
-            logger.info(f"Force mode started with wrench: {wrench}, selection: {selection_vector}")
-            logger.info(f"Task frame: {task_frame}, limits: {limits}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to start force mode: {e}")
-            self.error_occurred.emit(f"Force mode failed: {str(e)}")
-            return False
+        return started
 
     def stop_force_mode(self) -> bool:
-        """
-        Stop force mode
-
-        Returns:
-            bool: Success status
-        """
-        if not self._connected or self.rtde_control is None:
-            return False
-
-        try:
-            self.rtde_control.forceModeStop()
+        """Stop force mode."""
+        stopped = self.force_controller.stop()
+        if stopped:
             self.info_message.emit("Force mode stopped")
-            logger.info("Force mode stopped")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to stop force mode: {e}")
-            self.error_occurred.emit(f"Stop force mode failed: {str(e)}")
-            return False
+        return stopped
 
-    def update_force_params(self, target_force: float = None,
-                           gain: float = None, max_disp: float = None) -> bool:
-        """
-        Update force control parameters (requires restarting force mode)
+    def set_force_level(self, target_force: float) -> bool:
+        """Change the target force, restarting force mode when it is active."""
+        return self.force_controller.set_target_force(target_force)
 
-        Args:
-            target_force: Target force in N
-            gain: Force control gain
-            max_disp: Maximum displacement in m
+    def zero_force_sensor(self) -> bool:
+        """Zero the force/torque sensor (no external load applied)."""
+        zeroed = self.force_controller.zero_sensor()
+        if zeroed:
+            self.info_message.emit("Force/torque sensor zeroed")
+        return zeroed
 
-        Returns:
-            bool: Success status
-        """
-        # Note: RTDE doesn't support runtime parameter updates
-        # This would require stopping and restarting force mode with new parameters
-        self.info_message.emit("Force parameter update requires restarting force mode")
-        logger.warning("Force parameters cannot be updated at runtime with RTDE")
-        return False
+    def _on_force_state_changed(self, active: bool, target_force: Optional[float]):
+        self.force_mode_changed.emit(active, float(target_force or 0.0))
+
+    def _on_force_timeout(self, target_force: float, timeout: float):
+        self.error_occurred.emit(
+            f"Force mode auto-released after {timeout:.0f}s timeout"
+        )
+        self.force_mode_timeout.emit(target_force, timeout)
 
     # ========================================
     # Script Execution Functions
@@ -1674,4 +1664,5 @@ class RobotController(QObject):
 
     def __del__(self):
         """Destructor"""
-        self.disconnect()
+        if self._connected:
+            self.disconnect()

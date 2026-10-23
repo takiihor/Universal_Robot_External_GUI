@@ -143,7 +143,7 @@ INTERPRETATION:
             analysis += "\n✗ LARGE VARIATION: Peak-to-peak variation > 5.0 N\n"
 
         # Check if force mode is active
-        if hasattr(self.main_window, 'force_mode_active') and self.main_window.force_mode_active:
+        if self.main_window.robot_controller.force_controller.is_active:
             analysis += "\n⚠ FORCE MODE IS ACTIVE - This will cause oscillations!\n"
             analysis += "  The robot is actively applying forces, not idle.\n"
         else:
