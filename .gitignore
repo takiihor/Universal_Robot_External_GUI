@@ -13,6 +13,10 @@ venv/
 logs/
 *.log
 
+# Local robot calibration and active recipe (use the tracked example)
+/presets/user_presets.json
+/pick_place.json
+
 # Editor and tooling metadata
 .vscode/
 .idea/

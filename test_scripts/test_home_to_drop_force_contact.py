@@ -3,7 +3,8 @@
 Drop test: home -> 100 mm above the drop preset -> compliant descent -> contact.
 
 The robot moves to home, then linearly to the drop preset plus an approach
-height. From there it descends in UR force mode with only Z compliant and stops
+height. An optional position-mode descent brings it to the force-start height.
+From there it descends in UR force mode with only Z compliant and stops
 when the measured vertical force reaches the contact threshold. Because the drop
 surface height varies, the contact point is found by force instead of a fixed
 position. After contact the script releases the gripper and retracts.
@@ -12,8 +13,9 @@ No external F/T sensor is needed: force mode and the contact measurement use the
 UR controller's built-in TCP force estimate (`actual_TCP_force` via RTDE).
 
 The drop preset is a normal preset. If it has no stored TCP pose, the script
-computes one from its joint values with RTDE forward kinematics, so the robot
-never has to touch the surface while resolving the approach pose.
+computes one from its joint values with an explicit active TCP offset in RTDE
+forward kinematics. This avoids stale TCP registers in ur_rtde 1.6.5. Both the
+drop and approach positions must pass workspace checks before any home move.
 
 Force and pose are read straight from RTDE during the descent, not from the
 10 Hz GUI cache, so contact is seen within a few milliseconds.
@@ -28,6 +30,7 @@ Quick start (from the project root):
 """
 
 import argparse
+import copy
 import logging
 import math
 import sys
@@ -38,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import Config
 from force_control import ForceConfig
+from utils import pose_to_matrix
 
 logger = logging.getLogger("drop_contact_test")
 
@@ -68,7 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--drop-preset", default="drop", help="Drop position preset name")
     parser.add_argument(
         "--approach-height-mm", type=float, default=100.0,
-        help="Height above the drop pose where force mode starts",
+        help="Height above the drop pose for the initial position-mode approach",
+    )
+    parser.add_argument(
+        "--force-start-height-mm", type=float, default=None,
+        help="Position-mode descend to this height above drop before force mode; "
+             "omitting it starts force mode at the initial approach",
     )
     parser.add_argument(
         "--contact-force", type=float, default=10.0,
@@ -84,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-descent-mm", type=float, default=150.0,
-        help="Abort if no contact is found after descending this far",
+        help="Total downward travel budget from initial approach, including fast descent",
     )
     parser.add_argument(
         "--approach-speed-mm-s", type=float, default=50.0,
@@ -140,6 +149,12 @@ def build_parser() -> argparse.ArgumentParser:
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.approach_height_mm <= 0:
         parser.error("--approach-height-mm must be positive")
+    height = args.force_start_height_mm
+    if height is not None:
+        if not math.isfinite(height) or not 0 <= height <= args.approach_height_mm:
+            parser.error("--force-start-height-mm must be between 0 and --approach-height-mm")
+        if args.max_descent_mm <= args.approach_height_mm - height:
+            parser.error("--max-descent-mm must leave travel for force mode after the fast descent")
     if not ForceConfig.MIN_TARGET_FORCE <= args.contact_force < ForceConfig.MAX_TARGET_FORCE:
         parser.error(
             f"--contact-force must be in "
@@ -189,33 +204,61 @@ def read_force_and_pose(robot):
     return robot.get_tcp_force(), robot.get_tcp_pose()
 
 
+def require_six_finite(values, description: str):
+    """Reject incomplete or non-finite robot coordinates before planning."""
+    try:
+        result = [float(value) for value in values]
+        if len(result) == 6 and all(math.isfinite(value) for value in result):
+            return result
+    except (TypeError, ValueError, OverflowError):
+        pass
+    raise TestAbort(f"{description} must contain six finite values")
+
+
 def resolve_drop_pose(robot, preset_name: str):
     """Return the TCP pose of a preset without moving to it."""
     preset = robot.preset_manager.get_preset(preset_name)
     if preset is None:
         raise TestAbort(f"Drop preset '{preset_name}' does not exist")
 
-    if preset.tcp_pose and len(preset.tcp_pose) == 6:
+    if preset.tcp_pose is not None:
         logger.info("Drop pose taken from the preset TCP pose")
-        return [float(v) for v in preset.tcp_pose]
+        return require_six_finite(preset.tcp_pose, f"Preset '{preset_name}' TCP pose")
 
     forward_kinematics = getattr(robot.rtde_control, "getForwardKinematics", None)
-    if not callable(forward_kinematics):
+    get_tcp_offset = getattr(robot.rtde_control, "getTCPOffset", None)
+    if not callable(forward_kinematics) or not callable(get_tcp_offset):
         raise TestAbort(
-            f"Preset '{preset_name}' has no TCP pose and this ur_rtde version has "
-            "no getForwardKinematics(); re-teach the preset with a TCP pose"
+            f"Preset '{preset_name}' has no TCP pose; resolving it requires "
+            "getForwardKinematics() and getTCPOffset(). Re-save it with a TCP pose."
         )
 
     try:
-        pose = forward_kinematics([float(v) for v in preset.joints])
+        joints = require_six_finite(preset.joints, f"Preset '{preset_name}' joints")
+        tcp_offset = require_six_finite(get_tcp_offset(), "Active TCP offset")
+        logger.info("Active TCP offset: %s", [round(v, 6) for v in tcp_offset])
+
+        # ur_rtde 1.6.5 uses a six-register recipe when the TCP argument is
+        # omitted OR all zero, leaving the script's TCP registers stale.
+        # A nonzero explicit offset selects the full twelve-register recipe.
+        # For a flange TCP, query a virtual point 1 mm along flange Z, then
+        # remove that translation in the returned frame. No TCP setting changes.
+        flange_tcp = not any(tcp_offset)
+        query_offset = [0.0, 0.0, 0.001, 0.0, 0.0, 0.0] if flange_tcp else tcp_offset
+        pose = require_six_finite(
+            forward_kinematics(joints, query_offset), "Forward kinematics pose"
+        )
+        if flange_tcp:
+            rotation = pose_to_matrix(pose)[:3, :3]
+            for axis in range(3):
+                pose[axis] -= float(rotation[axis, 2]) * 0.001
+    except TestAbort:
+        raise
     except Exception as exc:
         raise TestAbort(f"Forward kinematics failed for '{preset_name}': {exc}") from exc
 
-    if not pose or len(pose) != 6:
-        raise TestAbort(f"Forward kinematics returned an invalid pose for '{preset_name}'")
-
-    logger.info("Drop pose computed from preset joints with forward kinematics")
-    return [float(v) for v in pose]
+    logger.info("Drop pose computed from preset joints with an explicit TCP offset")
+    return pose
 
 
 def check_home_preset(robot, preset_name: str) -> None:
@@ -226,7 +269,48 @@ def check_home_preset(robot, preset_name: str) -> None:
     raise TestAbort(f"Home preset '{preset_name}' does not exist")
 
 
-def print_plan(args, home_name: str, drop_pose, approach_pose, timeout: float) -> None:
+def validate_plan(drop_pose, approach_pose) -> None:
+    """Check both Cartesian targets before confirmation or any home move."""
+    for name, pose in (("Drop pose", drop_pose), ("Approach pose", approach_pose)):
+        pose = require_six_finite(pose, name)
+        for axis, value in zip("xyz", pose[:3]):
+            low = Config.WORKSPACE_LIMITS[f"{axis}_min"]
+            high = Config.WORKSPACE_LIMITS[f"{axis}_max"]
+            if not low <= value <= high:
+                raise TestAbort(
+                    f"{name} {axis.upper()}={value:.4f} m exceeds workspace "
+                    f"[{low:.4f}, {high:.4f}] m; no motion commanded. "
+                    "Check the TCP configuration and drop preset."
+                )
+
+
+def plan_descent(args, drop_pose):
+    """Split approach and force search while preserving the absolute lower Z."""
+    drop_pose = require_six_finite(drop_pose, "Drop pose")
+    approach = list(drop_pose)
+    approach[2] += args.approach_height_mm / 1000.0
+    height = args.force_start_height_mm
+    if height is None:
+        height = args.approach_height_mm
+    if not math.isfinite(height) or not 0 <= height <= args.approach_height_mm:
+        raise TestAbort("Force-start height must lie between drop and initial approach")
+    force_start = list(drop_pose)
+    force_start[2] += height / 1000.0
+    fast_mm = args.approach_height_mm - height
+    force_args = copy.copy(args)
+    force_args.max_descent_mm = args.max_descent_mm - fast_mm
+    if force_args.max_descent_mm <= 0:
+        raise TestAbort("Fast descent uses the entire descent budget; no motion commanded")
+    validate_plan(drop_pose, approach)
+    validate_plan(drop_pose, force_start)
+    timeout = min(force_args.max_descent_mm / args.descent_speed_mm_s + 10.0,
+                  ForceConfig.MAX_TIMEOUT)
+    return dict(approach=approach, force_start=force_start,
+                fast_mm=fast_mm, force_args=force_args, timeout=timeout)
+
+
+def print_plan(args, home_name: str, drop_pose, approach_pose, timeout: float,
+               descent_plan=None) -> None:
     print()
     print("=" * 64)
     print("Drop contact test")
@@ -236,12 +320,18 @@ def print_plan(args, home_name: str, drop_pose, approach_pose, timeout: float) -
     print(f"  Drop pose (base)   : {[round(v, 4) for v in drop_pose]}")
     print(f"  Approach pose      : {[round(v, 4) for v in approach_pose]}")
     print(f"  Approach height    : {args.approach_height_mm:.1f} mm")
+    if descent_plan is not None:
+        print(f"  Force starts at    : {[round(v, 4) for v in descent_plan['force_start']]}")
+        print(f"  Fast descent       : {descent_plan['fast_mm']:.1f} mm at {args.approach_speed_mm_s:.1f} mm/s")
+        print(f"  Force search limit : {descent_plan['force_args'].max_descent_mm:.1f} mm")
     print(f"  Contact threshold  : {args.contact_force:.1f} N measured")
     print(f"  Commanded force    : {args.command_force:.1f} N")
     print(f"  Descent speed      : {args.descent_speed_mm_s:.1f} mm/s")
     print(f"  Max descent        : {args.max_descent_mm:.1f} mm")
     print(f"  Force mode timeout : {timeout:.0f} s")
-    if args.manual_gripper:
+    if getattr(args, 'gripper_description', None):
+        print(f"  Gripper            : {args.gripper_description}")
+    elif args.manual_gripper:
         print("  Gripper            : manual release at contact")
     elif args.gripper_pin is not None:
         print(
@@ -303,41 +393,72 @@ def start_force_descent(robot, args, timeout: float) -> bool:
     return started
 
 
-def descend_until_contact(robot, app, args, baseline, approach_z: float, timeout: float):
-    """Watch force and pose until contact, then stop force mode."""
+def descend_until_contact(robot, app, args, baseline, approach_z: float, timeout: float,
+                          *, stop_at_z=None):
+    """Stop on contact, or at an optional taught pick height without contact.
+
+    The optional height is a software-monitored endpoint, not a safety-rated
+    travel limit. Placement omits it and still requires measured force contact.
+    """
     max_descent = args.max_descent_mm / 1000.0
     start = time.monotonic()
     last_log = start
     peak_delta = 0.0
+    contact_guard = getattr(args, 'contact_guard', None)
+    next_guard_check = start
 
     while True:
         app.processEvents()
         now = time.monotonic()
+        if contact_guard is not None and now >= next_guard_check:
+            contact_guard()
+            next_guard_check = now + 0.1
 
         if now - start > 0.5 and not robot.force_controller.is_active:
             raise TestAbort("Force mode stopped unexpectedly before contact")
 
         force, pose = read_force_and_pose(robot)
+        if stop_at_z is not None:
+            # Picking cannot safely decide whether to descend or grip with
+            # missing pose/force feedback.
+            pose = require_six_finite(pose, "Pick search TCP pose")
+            force = require_six_finite(force, "Pick search TCP force")
 
         delta = 0.0
         if force and len(force) >= 6:
             delta = float(force[2]) - baseline[2]
             peak_delta = max(peak_delta, abs(delta))
 
-        if now - start >= 0.5 and abs(delta) >= args.contact_force:
+        # Reaching the taught pick pose is a successful position stop, even if
+        # force rises in the same sample. Never add the contact backoff here.
+        if stop_at_z is not None and pose[2] <= stop_at_z:
+            if not robot.stop_force_mode():
+                raise TestAbort("Pick position reached but force mode could not be stopped")
+            logger.info("Reached taught pick Z=%.4f m without earlier accepted contact; stopping search",
+                        stop_at_z)
+            return {
+                "reason": "position", "force": force, "delta": delta,
+                "descent": approach_z - pose[2], "z": pose[2],
+                "pose": pose, "elapsed": now - start,
+            }
+
+        if now - start >= getattr(args, 'contact_min_time_s', 0.5) and abs(delta) >= args.contact_force:
             if not robot.stop_force_mode():
                 raise TestAbort("Contact detected but force mode could not be stopped")
-            z = pose[2] if pose else float("nan")
+            contact_pose = require_six_finite(pose, "Measured contact TCP pose")
+            z = contact_pose[2]
             descent = approach_z - z
             logger.info(
                 "Contact after %.1f s: Fz delta %.2f N, descended %.1f mm",
                 now - start, delta, descent * 1000.0,
             )
             return {
+                "reason": "contact",
                 "force": force,
                 "delta": delta,
                 "descent": descent,
                 "z": z,
+                "pose": contact_pose,
                 "elapsed": now - start,
             }
 
@@ -397,19 +518,17 @@ def release_gripper(robot, args) -> bool:
     return True
 
 
-def run_test(app, robot, args) -> int:
+def run_test(app, robot, args, *, move_home=True, resolved_drop_pose=None) -> int:
     check_home_preset(robot, args.home_preset)
-    drop_pose = resolve_drop_pose(robot, args.drop_preset)
+    drop_pose = (resolve_drop_pose(robot, args.drop_preset)
+                 if resolved_drop_pose is None else list(resolved_drop_pose))
 
-    approach_pose = list(drop_pose)
-    approach_pose[2] += args.approach_height_mm / 1000.0
-
-    timeout = min(
-        args.max_descent_mm / args.descent_speed_mm_s + 10.0,
-        ForceConfig.MAX_TIMEOUT,
-    )
-
-    print_plan(args, args.home_preset, drop_pose, approach_pose, timeout)
+    descent_plan = plan_descent(args, drop_pose)
+    approach_pose = descent_plan['approach']
+    force_start = descent_plan['force_start']
+    force_args = descent_plan['force_args']
+    timeout = descent_plan['timeout']
+    print_plan(args, args.home_preset, drop_pose, approach_pose, timeout, descent_plan)
 
     if args.dry_run:
         logger.info("Dry run: poses resolved, no motion commanded")
@@ -421,10 +540,11 @@ def run_test(app, robot, args) -> int:
             logger.info("Aborted by operator")
             return 1
 
-    logger.info("Moving to home preset '%s'", args.home_preset)
-    if not robot.move_to_preset_position(args.home_preset):
-        raise TestAbort("Move to home preset failed")
-    wait(app, args.settle_s)
+    if move_home:
+        logger.info("Moving to home preset '%s'", args.home_preset)
+        if not robot.move_to_preset_position(args.home_preset):
+            raise TestAbort("Move to home preset failed")
+        wait(app, args.settle_s)
 
     logger.info("Moving to approach pose (%.1f mm above drop)", args.approach_height_mm)
     moved = robot.move_tcp(
@@ -437,23 +557,31 @@ def run_test(app, robot, args) -> int:
         raise TestAbort("Move to approach pose failed")
     wait(app, args.settle_s)
 
+    if descent_plan['fast_mm'] > 0:
+        logger.info("Position-mode descent to force-start pose: %.1f mm at %.1f mm/s",
+                    descent_plan['fast_mm'], args.approach_speed_mm_s)
+        if not robot.move_tcp(*force_start, speed=args.approach_speed_mm_s / 1000.0,
+                              accel=Config.DEFAULT_TCP_ACCEL, relative=False):
+            raise TestAbort("Move to force-start pose failed")
+        wait(app, args.settle_s)
+
     current = robot.get_tcp_pose()
     if current is None:
         raise TestAbort("Cannot read the TCP pose at the approach position")
-    position_error = max(abs(current[i] - approach_pose[i]) for i in range(3))
+    position_error = max(abs(current[i] - force_start[i]) for i in range(3))
     if position_error > 0.01:
         logger.warning(
-            "TCP is %.1f mm from the approach pose", position_error * 1000.0
+            "TCP is %.1f mm from the force-start pose", position_error * 1000.0
         )
 
     baseline = collect_force_baseline(robot, app)
 
-    if not start_force_descent(robot, args, timeout):
+    if not start_force_descent(robot, force_args, timeout):
         raise TestAbort("Force mode could not be started")
 
     try:
         contact = descend_until_contact(
-            robot, app, args, baseline, approach_pose[2], timeout
+            robot, app, force_args, baseline, force_start[2], timeout
         )
     except NoContact as exc:
         current = robot.get_tcp_pose()
@@ -468,6 +596,11 @@ def run_test(app, robot, args) -> int:
             )
         raise
 
+    logger.info(
+        "Accepting measured placement Z=%.4f m (taught drop Z=%.4f m, difference=%+.1f mm); "
+        "releasing at the current contact position",
+        contact['z'], drop_pose[2], (contact['z'] - drop_pose[2]) * 1000.0,
+    )
     if not release_gripper(robot, args):
         raise TestAbort(
             "Gripper release failed; robot left at the contact point"

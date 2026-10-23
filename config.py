@@ -23,7 +23,7 @@ class Config:
     # ========================================
     # 連線參數
     # ========================================
-    DEFAULT_IP = "192.168.1.100"
+    DEFAULT_IP = os.environ.get("ROBOT_IP", "").strip() or "192.168.1.10"
     DEFAULT_PORT = 30004
     DEFAULT_RTDE_FREQUENCY = 125  # Hz
 

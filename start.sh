@@ -7,6 +7,7 @@
 #   ./start.sh drop-test [args]    home -> 100 mm above drop -> force-mode descent to contact
 #   ./start.sh drop-test --dry-run resolve and print the poses without moving
 #   ./start.sh drop-test --help    list all test options
+#   ./start.sh pick-place [args]   RG2 pick at positionA -> home -> force-mode placement
 #
 # Robot IP: defaults to Config.DEFAULT_IP; override with ROBOT_IP=x.x.x.x ./start.sh ...
 set -euo pipefail
@@ -116,9 +117,31 @@ check() {
 }
 
 drop_test() {
+    configure_qt_platform
     local args=()
     [[ -n "${ROBOT_IP:-}" ]] && args+=(--ip "$ROBOT_IP")
     exec "$PY" test_scripts/test_home_to_drop_force_contact.py "${args[@]}" "$@"
+}
+
+pick_place() {
+    configure_qt_platform
+    exec "$PY" test_scripts/test_rg2_pick_place.py "$@"
+}
+
+configure_qt_platform() {
+    # Qt 5 on GNOME otherwise defaults to xcb, even in a Wayland session.
+    # Prefer the native backend and retain xcb as a fallback. Honor overrides.
+    if [[ -z "${QT_QPA_PLATFORM:-}" &&
+          "${XDG_SESSION_TYPE:-}" == wayland &&
+          -n "${WAYLAND_DISPLAY:-}" ]]; then
+        export QT_QPA_PLATFORM="wayland;xcb"
+    fi
+}
+
+launch_gui() {
+    ensure_env
+    configure_qt_platform
+    exec "$PY" main.py "$@"
 }
 
 cmd="${1:-gui}"
@@ -126,9 +149,10 @@ cmd="${1:-gui}"
 
 case "$cmd" in
     install)   install ;;
-    gui)       ensure_env; exec "$PY" main.py "$@" ;;
+    gui)       launch_gui "$@" ;;
     check)     ensure_env; check ;;
     drop-test) ensure_env; drop_test "$@" ;;
-    -h|--help|help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' ;;
+    pick-place) ensure_env; pick_place "$@" ;;
+    -h|--help|help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
     *)         die "Unknown command '$cmd' (try: ./start.sh help)" ;;
 esac

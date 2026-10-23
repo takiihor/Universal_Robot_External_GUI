@@ -646,7 +646,7 @@ class MainWindow(QMainWindow):
         # IP address
         layout.addWidget(QLabel("IP Address:"), 0, 0)
         self.ip_input = QLineEdit(Config.DEFAULT_IP)
-        self.ip_input.setPlaceholderText("e.g., 192.168.1.100")
+        self.ip_input.setPlaceholderText(f"e.g., {Config.DEFAULT_IP}")
         layout.addWidget(self.ip_input, 0, 1)
 
         # Port
@@ -1731,10 +1731,22 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Input Error", "Please enter a position name")
             return
 
-        # Get current joint positions
-        joints = self.robot_controller.get_joint_positions()
-        if joints is None:
-            QMessageBox.warning(self, "Error", "Cannot read current position")
+        if not self.robot_controller.is_connected():
+            QMessageBox.warning(self, "Error", "Connect to the robot before saving a position")
+            return
+
+        # Store the live Cartesian pose alongside joints so Cartesian approach
+        # planning does not have to reconstruct it from a joint-only preset.
+        try:
+            receiver = self.robot_controller.rtde_receive
+            joints = list(receiver.getActualQ())
+            tcp_pose = list(receiver.getActualTCPPose())
+            if any(len(values) != 6 or not all(math.isfinite(v) for v in values)
+                   for values in (joints, tcp_pose)):
+                raise ValueError("Incomplete or non-finite robot coordinates")
+        except Exception as exc:
+            logger.error("Cannot read position for preset: %s", exc)
+            QMessageBox.warning(self, "Error", "Cannot read current joints and TCP pose")
             return
 
         preset_manager = getattr(self, "preset_manager", None)
@@ -1745,6 +1757,7 @@ class MainWindow(QMainWindow):
         preset = PresetData(
             name=name,
             joints=joints,
+            tcp_pose=tcp_pose,
             description="User defined position",
             category=PresetCategory.USER
         )

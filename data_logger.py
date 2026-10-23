@@ -17,20 +17,12 @@ from typing import List, Optional, Dict, Any
 from collections import deque
 import logging
 
-# Optional dependencies for advanced features
+# Optional dependency for HDF5 import/export
 try:
     import h5py
     HDF5_AVAILABLE = True
 except ImportError:
     HDF5_AVAILABLE = False
-    logging.warning("h5py not available. HDF5 export will be disabled.")
-
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    logging.warning("pandas not available. Advanced data analysis will be limited.")
 
 from PyQt5.QtCore import QObject, pyqtSignal, QMutex, QMutexLocker
 
@@ -142,6 +134,8 @@ class DataLogger(QObject):
         self._stats_cache_size = 0
 
         logger.info("DataLogger initialized with buffer size: %d", self.max_buffer_size)
+        if not HDF5_AVAILABLE:
+            logger.info("HDF5 import/export disabled (optional h5py package is not installed); CSV is available")
 
     # ========== Recording Control ==========
 

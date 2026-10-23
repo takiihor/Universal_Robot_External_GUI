@@ -31,6 +31,8 @@ def setup_logging():
         level=logging.INFO,
         format=log_format,
         datefmt=date_format,
+        # Imported modules may have configured the root logger already.
+        force=True,
         handlers=[
             # 檔案輸出
             logging.FileHandler(
@@ -138,6 +140,7 @@ def main():
 
     # 創建 QApplication
     app = QApplication(sys.argv)
+    logger.info("Qt platform initialized: %s", app.platformName())
 
     # 設定應用程式資訊
     app.setApplicationName("UR10e Control UI")
