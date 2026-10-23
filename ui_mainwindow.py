@@ -32,6 +32,7 @@ pg.setConfigOption('foreground', 'k')
 from robot_controller import RobotController
 from data_logger import DataLogger
 from config import Config
+from force_control.ui import ForceModePage
 from utils import format_pose, format_force, format_joints, degrees_to_radians, radians_to_degrees, list_scripts
 from preset_manager import PresetManager, PresetData, PresetCategory
 
@@ -179,9 +180,6 @@ class MainWindow(QMainWindow):
         # Hand Guiding Tool (lazy initialized)
         self.hand_guiding_tool = None
 
-        # Current control states
-        self.force_mode_active = False
-
         # Chart update control
         self.charts_paused = False
         self.chart_update_counter = 0
@@ -193,9 +191,6 @@ class MainWindow(QMainWindow):
         self.tcp_x_data = []
         self.tcp_y_data = []
         self.tcp_z_data = []
-        self.force_x_data = []
-        self.force_y_data = []
-        self.force_z_data = []
 
         # Initialize UI
         self.init_ui()
@@ -251,8 +246,9 @@ class MainWindow(QMainWindow):
         self.page_stack.addWidget(movement_page)
 
         # Page 3: Force Mode page
-        force_page = self.create_force_mode_page()
-        self.page_stack.addWidget(force_page)
+        self.force_page = ForceModePage(self.robot_controller.force_controller)
+        self.force_page.add_left_widget(self.create_data_recording_section())
+        self.page_stack.addWidget(self.force_page)
 
         # Page 4: Presets page
         presets_page = self.create_presets_page()
@@ -642,50 +638,6 @@ class MainWindow(QMainWindow):
 
         return panel
 
-    def create_control_panel_tabbed(self) -> QWidget:
-        """Create tabbed control panel"""
-        panel = QWidget()
-        panel.setMaximumWidth(420)  # Limit width to keep good UI proportions
-        layout = QVBoxLayout(panel)
-
-        # Create tab widget
-        tab_widget = QTabWidget()
-        self.control_tab_widget = tab_widget  # Store reference for show/hide
-
-        # Tab 1: Connection & Basic Control
-        basic_tab = QWidget()
-        basic_layout = QVBoxLayout(basic_tab)
-        basic_layout.addWidget(self.create_connection_section())
-        basic_layout.addWidget(self.create_freedrive_section())
-        basic_layout.addWidget(self.create_emergency_stop_button())
-        basic_layout.addWidget(self.create_unlock_robot_button())
-        basic_layout.addStretch()
-        tab_widget.addTab(basic_tab, "Basic")
-
-        # Tab 2: Movement Control (Combined TCP + Joint)
-        movement_tab = self.create_movement_control_tab()
-        tab_widget.addTab(movement_tab, "Movement Control")
-
-        # Tab 3: Preset Positions
-        preset_tab = self.create_preset_positions_tab()
-        tab_widget.addTab(preset_tab, "Presets")
-
-        # Tab 5: Force Control
-        force_tab = self.create_force_control_tab()
-        tab_widget.addTab(force_tab, "Force")
-
-        # Tab 6: Scripts
-        script_tab = self.create_script_execution_tab()
-        tab_widget.addTab(script_tab, "Scripts")
-
-        layout.addWidget(tab_widget)
-
-        return panel
-
-    # ========================================
-    # Basic Control Sections
-    # ========================================
-
     def create_connection_section(self) -> QGroupBox:
         """Create connection control section"""
         group = QGroupBox("Connection Settings")
@@ -1041,88 +993,6 @@ class MainWindow(QMainWindow):
         return tab
 
     # ========================================
-    # Force Control Tab
-    # ========================================
-
-    def create_force_control_tab(self) -> QWidget:
-        """Create force control tab"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        # Force control buttons
-        control_group = QGroupBox("Force Mode Control")
-        control_layout = QVBoxLayout()
-
-        self.force_start_btn = QPushButton("Start Force Mode")
-        self.force_start_btn.setEnabled(False)
-        self.force_start_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }")
-        self.force_start_btn.clicked.connect(self.on_force_start_clicked)
-        control_layout.addWidget(self.force_start_btn)
-
-        self.force_stop_btn = QPushButton("Stop Force Mode")
-        self.force_stop_btn.setEnabled(False)
-        self.force_stop_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }")
-        self.force_stop_btn.clicked.connect(self.on_force_stop_clicked)
-        control_layout.addWidget(self.force_stop_btn)
-
-        self.force_status_label = QLabel("Status: Inactive")
-        self.force_status_label.setAlignment(Qt.AlignCenter)
-        control_layout.addWidget(self.force_status_label)
-
-        control_group.setLayout(control_layout)
-        layout.addWidget(control_group)
-
-        # Force parameters
-        param_group = QGroupBox("Force Parameters")
-        param_layout = QGridLayout()
-
-        param_layout.addWidget(QLabel("Target Force (N):"), 0, 0)
-        self.target_force_spin = QDoubleSpinBox()
-        self.target_force_spin.setRange(Config.MIN_TARGET_FORCE, Config.MAX_TARGET_FORCE)
-        self.target_force_spin.setValue(Config.DEFAULT_TARGET_FORCE)
-        self.target_force_spin.setSingleStep(0.5)
-        self.target_force_spin.setDecimals(2)
-        param_layout.addWidget(self.target_force_spin, 0, 1)
-
-        param_layout.addWidget(QLabel("Gain:"), 1, 0)
-        self.force_gain_spin = QDoubleSpinBox()
-        self.force_gain_spin.setRange(0.001, 0.01)
-        self.force_gain_spin.setValue(Config.DEFAULT_FORCE_GAIN)
-        self.force_gain_spin.setSingleStep(0.001)
-        self.force_gain_spin.setDecimals(3)
-        param_layout.addWidget(self.force_gain_spin, 1, 1)
-
-        param_layout.addWidget(QLabel("Max Displacement (m):"), 2, 0)
-        self.max_disp_spin = QDoubleSpinBox()
-        self.max_disp_spin.setRange(0.01, 0.1)
-        self.max_disp_spin.setValue(Config.DEFAULT_MAX_DISPLACEMENT)
-        self.max_disp_spin.setSingleStep(0.01)
-        self.max_disp_spin.setDecimals(3)
-        param_layout.addWidget(self.max_disp_spin, 2, 1)
-
-        param_group.setLayout(param_layout)
-        layout.addWidget(param_group)
-
-        # Force direction selection
-        direction_group = QGroupBox("Force Direction")
-        direction_layout = QGridLayout()
-
-        self.force_direction_checks = []
-        directions = ['Fx', 'Fy', 'Fz', 'Tx', 'Ty', 'Tz']
-        for i, dir_name in enumerate(directions):
-            check = QCheckBox(dir_name)
-            check.setChecked(Config.DEFAULT_FORCE_DIRECTION[i] == 1)
-            direction_layout.addWidget(check, i // 3, i % 3)
-            self.force_direction_checks.append(check)
-
-        direction_group.setLayout(direction_layout)
-        layout.addWidget(direction_group)
-
-        layout.addStretch()
-
-        return tab
-
-    # ========================================
     # Script Execution Tab
     # ========================================
 
@@ -1177,22 +1047,6 @@ class MainWindow(QMainWindow):
     # ========================================
     # Page Widgets (for page switching)
     # ========================================
-
-    def create_monitor_page(self) -> QWidget:
-        """Create monitor page combining monitor panel and charts panel"""
-        page = QWidget()
-        layout = QHBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Left side: Monitor panel
-        monitor_panel = self.create_monitor_panel()
-        layout.addWidget(monitor_panel)
-
-        # Right side: Charts panel
-        charts_panel = self.create_charts_panel()
-        layout.addWidget(charts_panel)
-
-        return page
 
     def create_sequential_controller_page(self) -> QWidget:
         """Create Sequential Controller page"""
@@ -1390,91 +1244,6 @@ class MainWindow(QMainWindow):
 
         return page
 
-    def create_force_mode_page(self) -> QWidget:
-        """Create Force Mode page with controls, force chart, and data recording"""
-        page = QWidget()
-        main_layout = QHBoxLayout(page)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
-
-        # Left side: Force controls and current readings (scrollable)
-        left_container = QWidget()
-        left_container_layout = QVBoxLayout(left_container)
-        left_container_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Scrollable area for left side content
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        # Content widget for scroll area
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(10)
-
-        # Force control settings
-        force_controls = self.create_force_control_tab()
-        left_layout.addWidget(force_controls)
-
-        # Current force/torque display
-        force_display = self.create_force_display()
-        left_layout.addWidget(force_display)
-
-        # Data Recording section (moved from dock)
-        data_recording_group = self.create_data_recording_section()
-        left_layout.addWidget(data_recording_group)
-
-        left_layout.addStretch()
-
-        # Add content to scroll area
-        scroll_area.setWidget(left_panel)
-        left_container_layout.addWidget(scroll_area)
-
-        main_layout.addWidget(left_container, 2)
-
-        # Right side: Force visualization
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(10)
-
-        # Force History Chart
-        force_chart_group = QGroupBox("Force Sensor History")
-        force_chart_layout = QVBoxLayout()
-
-        # Chart controls
-        chart_control_layout = QHBoxLayout()
-        self.force_pause_chart_btn = QPushButton("Pause Chart")
-        self.force_pause_chart_btn.clicked.connect(self.on_pause_charts)
-        chart_control_layout.addWidget(self.force_pause_chart_btn)
-
-        force_clear_chart_btn = QPushButton("Clear Chart")
-        force_clear_chart_btn.clicked.connect(self.on_clear_charts)
-        chart_control_layout.addWidget(force_clear_chart_btn)
-        chart_control_layout.addStretch()
-        force_chart_layout.addLayout(chart_control_layout)
-
-        # Create force plot
-        self.force_plot_widget = pg.PlotWidget(title="Force (Fx, Fy, Fz)")
-        self.force_plot_widget.setLabel('left', 'Force', units='N')
-        self.force_plot_widget.setLabel('bottom', 'Time', units='s')
-        self.force_plot_widget.addLegend()
-        self.force_plot_widget.showGrid(x=True, y=True, alpha=0.3)
-
-        # Create plot lines
-        self.force_x_curve = self.force_plot_widget.plot(pen=pg.mkPen(color='r', width=2), name='Fx')
-        self.force_y_curve = self.force_plot_widget.plot(pen=pg.mkPen(color='g', width=2), name='Fy')
-        self.force_z_curve = self.force_plot_widget.plot(pen=pg.mkPen(color='b', width=2), name='Fz')
-
-        force_chart_layout.addWidget(self.force_plot_widget)
-        force_chart_group.setLayout(force_chart_layout)
-        right_layout.addWidget(force_chart_group)
-
-        main_layout.addWidget(right_panel, 3)
-
-        return page
-
     def create_data_recording_section(self) -> QGroupBox:
         """Create data recording control section (moved from dock widget)"""
         group = QGroupBox("Data Recording")
@@ -1540,34 +1309,6 @@ class MainWindow(QMainWindow):
     # ========================================
     # Monitor Panel
     # ========================================
-
-    def create_monitor_panel(self) -> QWidget:
-        """Create monitor panel"""
-        panel = QWidget()
-        self.monitor_panel = panel  # Store reference
-        layout = QVBoxLayout(panel)
-
-        # TCP Pose display
-        tcp_group = self.create_tcp_display()
-        layout.addWidget(tcp_group)
-
-        # Joint display
-        joint_group = self.create_joint_display()
-        layout.addWidget(joint_group)
-
-        # Force display
-        force_group = self.create_force_display()
-        layout.addWidget(force_group)
-
-        # Safety status display (NEW - Stage 4)
-        safety_group = self.create_safety_status_panel()
-        layout.addWidget(safety_group)
-
-        # Log display
-        log_group = self.create_log_display()
-        layout.addWidget(log_group)
-
-        return panel
 
     def create_tcp_display(self) -> QGroupBox:
         """Create TCP pose display with orientation visualization"""
@@ -1654,30 +1395,6 @@ class MainWindow(QMainWindow):
         group.setLayout(layout)
         return group
 
-    def create_force_display(self) -> QGroupBox:
-        """Create force sensor display"""
-        group = QGroupBox("Force/Torque Sensor")
-        layout = QGridLayout()
-
-        labels = ['Fx (N):', 'Fy (N):', 'Fz (N):', 'Tx (Nm):', 'Ty (Nm):', 'Tz (Nm):']
-        self.force_labels = []
-
-        for i, label_text in enumerate(labels):
-            row = i // 3
-            col = (i % 3) * 2
-
-            layout.addWidget(QLabel(label_text), row, col)
-
-            value_label = QLabel("0.00")
-            value_label.setStyleSheet("QLabel { background-color: #f0f0f0; padding: 5px; font-family: monospace; }")
-            value_label.setMinimumWidth(100)
-            layout.addWidget(value_label, row, col + 1)
-
-            self.force_labels.append(value_label)
-
-        group.setLayout(layout)
-        return group
-
     def create_safety_status_panel(self) -> QGroupBox:
         """Create safety monitoring status panel (NEW - Stage 4)"""
         group = QGroupBox("Safety Status")
@@ -1691,13 +1408,13 @@ class MainWindow(QMainWindow):
         self.workspace_status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.workspace_status_label)
 
-        # Force status
-        self.force_status_label = QLabel("● Forces: OK")
-        self.force_status_label.setStyleSheet(
+        # Force status (safety monitoring, separate from the force mode state)
+        self.force_safety_label = QLabel("● Forces: OK")
+        self.force_safety_label.setStyleSheet(
             "QLabel { background-color: #4CAF50; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }"
         )
-        self.force_status_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.force_status_label)
+        self.force_safety_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.force_safety_label)
 
         # Collision status
         self.collision_status_label = QLabel("● Collision: None")
@@ -1733,66 +1450,6 @@ class MainWindow(QMainWindow):
     # ========================================
     # Charts Panel (NEW IN STAGE 3)
     # ========================================
-
-    def create_charts_panel(self) -> QWidget:
-        """Create real-time charts panel using PyQtGraph"""
-        panel = QWidget()
-        self.charts_panel = panel  # Store reference
-        layout = QVBoxLayout(panel)
-
-        # Chart control buttons
-        control_layout = QHBoxLayout()
-
-        self.pause_charts_btn = QPushButton("Pause Charts")
-        self.pause_charts_btn.clicked.connect(self.on_pause_charts)
-        control_layout.addWidget(self.pause_charts_btn)
-
-        clear_charts_btn = QPushButton("Clear Charts")
-        clear_charts_btn.clicked.connect(self.on_clear_charts)
-        control_layout.addWidget(clear_charts_btn)
-
-        control_layout.addStretch()
-        layout.addLayout(control_layout)
-
-        # TCP Position Chart
-        tcp_group = QGroupBox("TCP Position History")
-        tcp_layout = QVBoxLayout()
-
-        self.tcp_plot_widget = pg.PlotWidget(title="TCP Position (X, Y, Z)")
-        self.tcp_plot_widget.setLabel('left', 'Position', units='m')
-        self.tcp_plot_widget.setLabel('bottom', 'Time', units='s')
-        self.tcp_plot_widget.addLegend()
-        self.tcp_plot_widget.showGrid(x=True, y=True, alpha=0.3)
-
-        # Create plot lines
-        self.tcp_x_curve = self.tcp_plot_widget.plot(pen=pg.mkPen(color='r', width=2), name='X')
-        self.tcp_y_curve = self.tcp_plot_widget.plot(pen=pg.mkPen(color='g', width=2), name='Y')
-        self.tcp_z_curve = self.tcp_plot_widget.plot(pen=pg.mkPen(color='b', width=2), name='Z')
-
-        tcp_layout.addWidget(self.tcp_plot_widget)
-        tcp_group.setLayout(tcp_layout)
-        layout.addWidget(tcp_group)
-
-        # Force Chart
-        force_group = QGroupBox("Force Sensor History")
-        force_layout = QVBoxLayout()
-
-        self.force_plot_widget = pg.PlotWidget(title="Force (Fx, Fy, Fz)")
-        self.force_plot_widget.setLabel('left', 'Force', units='N')
-        self.force_plot_widget.setLabel('bottom', 'Time', units='s')
-        self.force_plot_widget.addLegend()
-        self.force_plot_widget.showGrid(x=True, y=True, alpha=0.3)
-
-        # Create plot lines
-        self.force_x_curve = self.force_plot_widget.plot(pen=pg.mkPen(color='r', width=2), name='Fx')
-        self.force_y_curve = self.force_plot_widget.plot(pen=pg.mkPen(color='g', width=2), name='Fy')
-        self.force_z_curve = self.force_plot_widget.plot(pen=pg.mkPen(color='b', width=2), name='Fz')
-
-        force_layout.addWidget(self.force_plot_widget)
-        force_group.setLayout(force_layout)
-        layout.addWidget(force_group)
-
-        return panel
 
     def create_status_bar(self):
         """Create status bar"""
@@ -1848,7 +1505,6 @@ class MainWindow(QMainWindow):
         # Robot controller signals
         self.robot_controller.tcp_pose_updated.connect(self.update_tcp_display)
         self.robot_controller.joint_positions_updated.connect(self.update_joint_display)
-        self.robot_controller.force_data_updated.connect(self.update_force_display)
         self.robot_controller.connection_status_changed.connect(self.on_connection_status_changed)
         self.robot_controller.error_occurred.connect(self.show_error_message)
         self.robot_controller.info_message.connect(self.show_info_message)
@@ -1872,6 +1528,10 @@ class MainWindow(QMainWindow):
 
         # Robot safety status signal (for protective stop detection)
         self.robot_controller.safety_status_changed.connect(self.on_safety_status_changed)
+
+        # Force mode state
+        self.robot_controller.force_mode_changed.connect(self.force_page.set_mode_state)
+        self.robot_controller.force_mode_timeout.connect(self.force_page.on_mode_timeout)
 
         # Connect trajectory replay signals
         self.robot_controller.trajectory_replay_started.connect(self.on_trajectory_replay_started)
@@ -2148,62 +1808,6 @@ class MainWindow(QMainWindow):
             self.preset_list.addItem(item)
 
     # ========================================
-    # Event Handlers - Force Control
-    # ========================================
-
-    def on_force_start_clicked(self):
-        """Start force mode button clicked"""
-        # Get parameters
-        target_force = self.target_force_spin.value()
-
-        # Get selection vector (which axes are active)
-        selection_vector = [1 if check.isChecked() else 0 for check in self.force_direction_checks]
-
-        # Create wrench based on selected axes
-        # In UR base frame: +X=right, +Y=forward, +Z=up
-        # Negative forces push in opposite direction
-        wrench = [0.0] * 6
-
-        # Map checked axes to wrench values
-        # Axes: [Fx=0, Fy=1, Fz=2, Tx=3, Ty=4, Tz=5]
-        for i, is_selected in enumerate(selection_vector):
-            if is_selected:
-                if i < 3:  # Force axes (Fx, Fy, Fz)
-                    # Default: Z-axis pushes DOWN (negative Z in base frame)
-                    # X-axis pushes RIGHT (positive X)
-                    # Y-axis pushes FORWARD (positive Y)
-                    if i == 2:  # Fz - push down
-                        wrench[i] = -target_force
-                    else:  # Fx, Fy - push in positive direction
-                        wrench[i] = target_force
-                else:  # Torque axes (Tx, Ty, Tz)
-                    # Torques use smaller values (typical range 0.5-5 Nm)
-                    wrench[i] = min(target_force * 0.3, 5.0)  # Scale down, cap at 5Nm
-
-        # Start force mode with speed limits from config
-        limits = Config.FORCE_MODE_SPEED_LIMITS
-
-        if self.robot_controller.start_force_mode(
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits
-        ):
-            self.force_mode_active = True
-            self.force_status_label.setText("Status: Active")
-            self.force_status_label.setStyleSheet("QLabel { color: green; font-weight: bold; }")
-            self.force_start_btn.setEnabled(False)
-            self.force_stop_btn.setEnabled(True)
-
-    def on_force_stop_clicked(self):
-        """Stop force mode button clicked"""
-        if self.robot_controller.stop_force_mode():
-            self.force_mode_active = False
-            self.force_status_label.setText("Status: Inactive")
-            self.force_status_label.setStyleSheet("QLabel { color: black; }")
-            self.force_start_btn.setEnabled(True)
-            self.force_stop_btn.setEnabled(False)
-
-    # ========================================
     # Event Handlers - Script Execution
     # ========================================
 
@@ -2277,12 +1881,13 @@ class MainWindow(QMainWindow):
         self.latest_joint_pos = joint_pos
 
     def on_force_data_received(self, forces: list):
-        """Force data received - store for logging"""
+        """Force data received - store for logging and update the force page"""
         self.latest_forces = forces
+        self.force_page.on_force_data(forces)
 
-        # Update chart data
-        if not self.charts_paused:
-            self.update_charts(None, None, forces)
+        if len(forces) >= 3:
+            magnitude = math.sqrt(forces[0] ** 2 + forces[1] ** 2 + forces[2] ** 2)
+            self.status_force_label.setText(f"{magnitude:.1f} N")
 
     def _try_log_data_point(self):
         """Try to log a complete data point to the logger"""
@@ -2551,55 +2156,15 @@ class MainWindow(QMainWindow):
                 self.tcp_y_curve.setData(time_subset, tcp_y_subset)
                 self.tcp_z_curve.setData(time_subset, tcp_z_subset)
 
-        # Update force data
-        if forces and len(forces) >= 3:
-            # If tcp_pose was not provided, we still need to update time_data for force plotting
-            if not tcp_pose:
-                self.time_data.append(relative_time)
-                # Limit buffer size for time_data
-                if len(self.time_data) > self.max_plot_points:
-                    self.time_data.pop(0)
-
-            # Ensure time data is synchronized
-            if len(self.force_x_data) < len(self.time_data):
-                # Pad force data to match time data length
-                while len(self.force_x_data) < len(self.time_data) - 1:
-                    self.force_x_data.append(0.0)
-                    self.force_y_data.append(0.0)
-                    self.force_z_data.append(0.0)
-
-            self.force_x_data.append(forces[0])
-            self.force_y_data.append(forces[1])
-            self.force_z_data.append(forces[2])
-
-            # Limit buffer size
-            if len(self.force_x_data) > self.max_plot_points:
-                self.force_x_data.pop(0)
-                self.force_y_data.pop(0)
-                self.force_z_data.pop(0)
-
-            # Update force curves - ensure arrays have same length
-            if len(self.time_data) > 1 and len(self.force_x_data) > 1:
-                # Use the minimum length to ensure arrays match
-                min_len = min(len(self.time_data), len(self.force_x_data))
-                time_subset = self.time_data[-min_len:]
-                force_x_subset = self.force_x_data[-min_len:]
-                force_y_subset = self.force_y_data[-min_len:]
-                force_z_subset = self.force_z_data[-min_len:]
-
-                self.force_x_curve.setData(time_subset, force_x_subset)
-                self.force_y_curve.setData(time_subset, force_y_subset)
-                self.force_z_curve.setData(time_subset, force_z_subset)
-
     def on_pause_charts(self):
-        """Pause/resume chart updates"""
+        """Pause/resume TCP chart updates"""
         self.charts_paused = not self.charts_paused
 
         if self.charts_paused:
-            self.pause_charts_btn.setText("Resume Charts")
+            self.movement_pause_chart_btn.setText("Resume Chart")
             self.show_info_message("Chart updates paused")
         else:
-            self.pause_charts_btn.setText("Pause Charts")
+            self.movement_pause_chart_btn.setText("Pause Chart")
             self.show_info_message("Chart updates resumed")
 
     def on_clear_charts(self):
@@ -2608,17 +2173,12 @@ class MainWindow(QMainWindow):
         self.tcp_x_data.clear()
         self.tcp_y_data.clear()
         self.tcp_z_data.clear()
-        self.force_x_data.clear()
-        self.force_y_data.clear()
-        self.force_z_data.clear()
 
         # Clear plots
         self.tcp_x_curve.setData([], [])
         self.tcp_y_curve.setData([], [])
         self.tcp_z_curve.setData([], [])
-        self.force_x_curve.setData([], [])
-        self.force_y_curve.setData([], [])
-        self.force_z_curve.setData([], [])
+        self.force_page.clear_chart()
 
         # Reset start time
         if hasattr(self, 'chart_start_time'):
@@ -2723,18 +2283,6 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Export failed:\n{str(e)}")
 
-    def toggle_control_panel(self, checked):
-        """Toggle control panel visibility"""
-        self.control_tab_widget.parent().setVisible(checked)
-
-    def toggle_monitor_panel(self, checked):
-        """Toggle monitor panel visibility"""
-        self.monitor_panel.setVisible(checked)
-
-    def toggle_charts_panel(self, checked):
-        """Toggle charts panel visibility"""
-        self.charts_panel.setVisible(checked)
-
     def on_refresh_ui(self):
         """Refresh UI (F5)"""
         self.update_preset_list()
@@ -2803,6 +2351,10 @@ class MainWindow(QMainWindow):
 
     def on_calibrate_force_sensor(self):
         """Calibrate force sensor"""
+        if not self.robot_controller.is_connected():
+            QMessageBox.warning(self, "Not Connected", "Connect to the robot before calibrating the sensor.")
+            return
+
         reply = QMessageBox.question(
             self,
             "Calibrate Force Sensor",
@@ -2811,9 +2363,10 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
-            # TODO: Implement actual calibration via robot controller
-            self.show_info_message("Force sensor calibration requested")
-            QMessageBox.information(self, "Calibration", "Force sensor calibration completed\n(Simulated)")
+            if self.robot_controller.zero_force_sensor():
+                QMessageBox.information(self, "Calibration", "Force sensor zeroed successfully")
+            else:
+                QMessageBox.warning(self, "Calibration Failed", "Could not zero the force sensor. Check the log.")
 
     def on_about(self):
         """Show about dialog"""
@@ -2915,19 +2468,6 @@ class MainWindow(QMainWindow):
         for i, value in enumerate(joints):
             self.joint_labels[i].setText(f"{value:.4f}")
 
-    def update_force_display(self, forces: list):
-        """Update force sensor display"""
-        if len(forces) != 6:
-            return
-
-        for i, value in enumerate(forces):
-            self.force_labels[i].setText(f"{value:.2f}")
-
-        # Update force magnitude in status overview (Basic page)
-        # Calculate total force magnitude from Fx, Fy, Fz
-        force_magnitude = math.sqrt(forces[0]**2 + forces[1]**2 + forces[2]**2)
-        self.status_force_label.setText(f"{force_magnitude:.1f} N")
-
     def on_connection_status_changed(self, connected: bool):
         """Connection status changed"""
         if connected:
@@ -2971,7 +2511,7 @@ class MainWindow(QMainWindow):
             self.load_preset_btn.setEnabled(True)
 
             # Enable force control
-            self.force_start_btn.setEnabled(True)
+            self.force_page.set_connected(True)
 
             # Enable script execution
             self.execute_script_btn.setEnabled(True)
@@ -3019,8 +2559,7 @@ class MainWindow(QMainWindow):
             self.load_preset_btn.setEnabled(False)
 
             # Disable force control
-            self.force_start_btn.setEnabled(False)
-            self.force_stop_btn.setEnabled(False)
+            self.force_page.set_connected(False)
 
             # Disable script execution
             self.execute_script_btn.setEnabled(False)
@@ -3062,18 +2601,20 @@ class MainWindow(QMainWindow):
 
     def on_force_warning(self, magnitude: float):
         """Handle force/torque warning"""
-        self.force_status_label.setText(f"⚠ Forces: High ({magnitude:.1f})")
-        self.force_status_label.setStyleSheet(
+        self.force_safety_label.setText(f"⚠ Forces: High ({magnitude:.1f})")
+        self.force_safety_label.setStyleSheet(
             "QLabel { background-color: #FF9800; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }"
         )
+        self.force_page.show_force_warning(magnitude)
         self.show_info_message(f"WARNING: Force/torque level high: {magnitude:.2f}")
 
     def on_force_violation(self, magnitude: float):
         """Handle force/torque limit violation"""
-        self.force_status_label.setText(f"🚫 Forces: EXCEEDED ({magnitude:.1f})")
-        self.force_status_label.setStyleSheet(
+        self.force_safety_label.setText(f"🚫 Forces: EXCEEDED ({magnitude:.1f})")
+        self.force_safety_label.setStyleSheet(
             "QLabel { background-color: #F44336; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }"
         )
+        self.force_page.show_force_violation(magnitude)
         self.show_error_message(f"CRITICAL: Force/torque limit EXCEEDED: {magnitude:.2f}!")
 
     def on_collision_detected(self, description: str):
@@ -3140,10 +2681,11 @@ class MainWindow(QMainWindow):
             "QLabel { background-color: #4CAF50; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }"
         )
 
-        self.force_status_label.setText("● Forces: OK")
-        self.force_status_label.setStyleSheet(
+        self.force_safety_label.setText("● Forces: OK")
+        self.force_safety_label.setStyleSheet(
             "QLabel { background-color: #4CAF50; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }"
         )
+        self.force_page.reset_safety()
 
         self.collision_status_label.setText("● Collision: None")
         self.collision_status_label.setStyleSheet(

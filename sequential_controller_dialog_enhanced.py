@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
 from sequential_controller import ActionType, ACTION_METADATA
+from force_control import ForceConfig, resolve_target_force
 from parameter_widgets import (
     PresetButtonGroup, ParameterHelpText, SliderWithValue,
     PinSelector, StateSelector, SectionHeader
@@ -375,15 +376,17 @@ class EnhancedActionParameterDialog(QDialog):
         """Add parameters for Enable Force Mode"""
         self.form_layout.addWidget(SectionHeader("Force Mode Settings"))
 
-        # Force level presets
-        force_presets = {"Gentle (5N)": 5, "Medium (10N)": 10, "Strong (15N)": 15}
-        current_force = self.parameters.get("force_level", 10)
+        # Named force levels from ForceConfig (gentle/medium/strong)
+        force_presets = {
+            f"{name.capitalize()} ({newtons:.0f}N)": int(newtons)
+            for name, newtons in ForceConfig.FORCE_LEVELS.items()
+        }
+        current_force = resolve_target_force(self.parameters)
 
-        default_key = "Medium (10N)"
-        for key, val in force_presets.items():
-            if val == current_force:
-                default_key = key
-                break
+        default_key = next(
+            (key for key, val in force_presets.items() if val == current_force),
+            list(force_presets)[0],
+        )
 
         self.widgets['force_preset'] = PresetButtonGroup(force_presets, default_key)
         self.form_layout.addWidget(self.widgets['force_preset'])
@@ -404,8 +407,10 @@ class EnhancedActionParameterDialog(QDialog):
         self.form_layout.addWidget(SectionHeader("Force Level"))
 
         # Force slider
-        current_force = self.parameters.get("force_newtons", 10)
-        self.widgets['force_slider'] = SliderWithValue(1, 30, current_force, "N")
+        current_force = resolve_target_force(self.parameters)
+        self.widgets['force_slider'] = SliderWithValue(
+            1, int(ForceConfig.MAX_TARGET_FORCE), int(round(current_force)), "N"
+        )
         self.form_layout.addWidget(self.widgets['force_slider'])
 
         self.form_layout.addWidget(ParameterHelpText(

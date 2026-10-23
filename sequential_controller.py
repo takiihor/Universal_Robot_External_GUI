@@ -22,6 +22,7 @@ from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
 from config import Config
+from force_control import resolve_target_force
 
 logger = logging.getLogger(__name__)
 
@@ -340,11 +341,9 @@ class Action:
             pos_name = self.parameters.get("position_name", "?")
             text += f" ({pos_name})"
         elif self.action_type == ActionType.ENABLE_FORCE:
-            force_level = self.parameters.get("force_level", "medium")
-            text += f" ({force_level})"
+            text += f" ({resolve_target_force(self.parameters):.1f} N)"
         elif self.action_type == ActionType.SET_FORCE_LEVEL:
-            force_level = self.parameters.get("force_level", "medium")
-            text += f" ({force_level})"
+            text += f" ({resolve_target_force(self.parameters):.1f} N)"
         elif self.action_type == ActionType.GRIPPER_MOVE:
             position = self.parameters.get("position", 50)
             text += f" ({position}%)"
@@ -1081,21 +1080,14 @@ class SequentialController(QObject):
 
     def _execute_enable_force(self, action: Action) -> bool:
         """Execute: Enable force mode"""
-        force_level = action.parameters.get("force_level", "medium")
+        target_force = resolve_target_force(action.parameters)
 
         # Check if force control is available
         if not hasattr(self.robot_controller, 'start_force_mode'):
             logger.warning("Force control not available on this robot")
             return True  # Don't fail, just skip
 
-        # Enable force mode
-        success = self.robot_controller.start_force_mode()
-
-        if success and force_level:
-            # Set force level if specified
-            self._set_force_level_internal(force_level)
-
-        return success
+        return self.robot_controller.start_force_mode(target_force=target_force)
 
     def _execute_disable_force(self, action: Action) -> bool:
         """Execute: Disable force mode"""
@@ -1107,27 +1099,11 @@ class SequentialController(QObject):
 
     def _execute_set_force_level(self, action: Action) -> bool:
         """Execute: Set force level"""
-        force_level = action.parameters.get("force_level", "medium")
-        return self._set_force_level_internal(force_level)
-
-    def _set_force_level_internal(self, force_level: str) -> bool:
-        """Set force level (internal helper)"""
-        # Map force level to actual force value
-        force_map = {
-            "gentle": 5.0,    # 5N
-            "medium": 10.0,   # 10N
-            "strong": 15.0,   # 15N
-        }
-
-        force_value = force_map.get(force_level, 10.0)
-
-        # Set force threshold (if robot controller supports it)
-        if hasattr(self.robot_controller, 'set_force_threshold'):
-            return self.robot_controller.set_force_threshold(force_value)
-
-        # Otherwise, just log
-        logger.info(f"Force level set to: {force_level} ({force_value}N)")
-        return True
+        target_force = resolve_target_force(action.parameters)
+        if not hasattr(self.robot_controller, 'set_force_level'):
+            logger.warning("Force control not available on this robot")
+            return True
+        return self.robot_controller.set_force_level(target_force)
 
     def _execute_gripper_open(self, action: Action) -> bool:
         """Execute: Open gripper"""
