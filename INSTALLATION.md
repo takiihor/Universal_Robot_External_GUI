@@ -122,11 +122,21 @@ python -c "import PyQt5; import rtde_control; import numpy; print('✅ 所有依
 **錯誤訊息**: `error: command 'gcc' failed` 或 `Qt platform plugin...`
 
 **解決方法 (Linux):**
+若出現 `Could not load the Qt platform plugin "xcb" ... even though it was found`，
+表示 Qt 已找到插件，但可能缺少其依賴的系統函式庫。此專案在 Ubuntu 24.04
+曾因缺少 `libxcb-xinerama.so.0` 無法啟動，可安裝對應的執行期套件：
+
 ```bash
-sudo apt install python3-pyqt5 python3-pyqt5.qtwidgets
-# 或
-sudo apt install qt5-default libqt5gui5 libqt5widgets5
-pip install PyQt5 --no-cache-dir
+sudo apt install libxcb-xinerama0
+./start.sh
+```
+
+在 Wayland 桌面使用 `./start.sh` 時，啟動器會優先使用原生 Wayland，並保留
+X11 (`xcb`) 作為備選。若已設定 `QT_QPA_PLATFORM`，啟動器會保留該設定。
+直接執行 Python 時，也可以手動選擇 Wayland：
+
+```bash
+QT_QPA_PLATFORM=wayland .venv/bin/python main.py
 ```
 
 **解決方法 (Windows):**

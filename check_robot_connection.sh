@@ -3,7 +3,7 @@ echo "============================================"
 echo "UR10e Robot Connection Checker"
 echo "============================================"
 echo ""
-echo "Enter your robot's IP address (e.g., 192.168.1.100):"
+echo "Enter your robot's IP address (e.g., 192.168.1.10):"
 read ROBOT_IP
 
 echo ""
