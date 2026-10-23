@@ -1,238 +1,247 @@
-# UR10e 遠端控制 UI 系統
+# UR10e Remote Control UI System
 
-一個基於 Python + PyQt5 + ur_rtde 的 UR10e 機器手臂遠端控制圖形化介面系統。
+A graphical remote control interface for the UR10e robot arm built with Python + PyQt5 + ur_rtde.
 
-## 專案概述
+## Project Overview
 
-本系統提供友善的圖形化介面，讓使用者能夠輕鬆控制和監控 UR10e 機器手臂，包含：
-- 即時連線管理
-- TCP 位姿與關節角度監控
-- 力感測器資料顯示
-- 自由驅動模式控制
-- 軟體急停功能
+This system provides a user-friendly graphical interface that lets users easily control and monitor the UR10e robot arm, including:
 
-## 開發階段
+- Live connection management
+- TCP pose and joint angle monitoring
+- Force sensor data display
+- Freedrive mode control
+- Software emergency stop
 
-**當前版本：第二階段 - 擴展控制功能** ✅
+## Development Stages
+
+**Current version: Stage 2 - Expanded Control Features** ✅
 
 ### Stage 1: Core Features ✅
-- [x] 連線管理
-- [x] 即時狀態監控
-- [x] 自由驅動模式
-- [x] 急停功能
+
+- [x] Connection management
+- [x] Real-time status monitoring
+- [x] Freedrive mode
+- [x] Emergency stop
 
 ### Stage 2: Expanded Control Features ✅
-- [x] 手動 TCP 控制（6-DOF with adjustable steps)
-- [x] 手動關節控制（Individual joint control)
-- [x] 預設位置管理（Save/Load/Delete positions)
-- [x] 力控制功能（Force mode with parameters)
-- [x] 腳本執行功能（URScript execution)
-- [x] I/O 控制（Digital & Analog I/O backend)
+
+- [x] Manual TCP control (6-DOF with adjustable steps)
+- [x] Manual joint control (individual joint control)
+- [x] Preset position management (save/load/delete positions)
+- [x] Force control (force mode with parameters)
+- [x] Script execution (URScript execution)
+- [x] I/O control (digital and analog I/O backend)
 
 ### Stage 3: Data Visualization & Logging ⏳
-- [ ] 即時圖表顯示（PyQtGraph charts）
-- [ ] 資料記錄與匯出（CSV/HDF5 format）
-- [ ] 軌跡錄製與重播（Trajectory recording）
 
-## 系統需求
+- [ ] Real-time charts (PyQtGraph charts)
+- [ ] Data logging and export (CSV/HDF5 format)
+- [ ] Trajectory recording and playback
 
-- Python 3.7 或更高版本
-- UR10e 機器手臂（支援 RTDE 協議）
-- 網路連線（機器手臂與電腦在同一網段）
+## System Requirements
 
-## 安裝步驟
+- Python 3.7 or later
+- UR10e robot arm (RTDE protocol support)
+- Network connection (robot and computer on the same subnet)
 
-### 1. 克隆或下載專案
+## Installation
+
+### 1. Clone or download the project
 
 ```bash
 cd /path/to/your/workspace
-# 如果從 git 下載
+# If downloading from git
 git clone <repository_url>
 cd ur10e_control_ui
 ```
 
-### 2. 建立虛擬環境（建議）
+### 2. Create a virtual environment (recommended)
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate  # Linux/Mac
-# 或
+# or
 venv\Scripts\activate     # Windows
 ```
 
-### 3. 安裝依賴套件
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. 驗證安裝
+### 4. Verify the installation
 
 ```bash
-python -c "import PyQt5; import rtde_control; print('依賴套件安裝成功')"
+python -c "import PyQt5; import rtde_control; print('Dependencies installed successfully')"
 ```
 
-## 使用方法
+## Usage
 
-### 啟動應用程式
+### Launch the application
 
 ```bash
 python main.py
 ```
 
-### 連線到機器人
+### Connect to the robot
 
-1. 確認 UR10e 已開機並處於可連線狀態
-2. 在應用程式的「連線設定」區域輸入機器人的 IP 位址（例如：192.168.1.100）
-3. 確認連接埠為 30004（RTDE 預設埠）
-4. 點擊「連線」按鈕
-5. 連線成功後，狀態指示器會變為綠色「● 已連線」
+1. Make sure the UR10e is powered on and ready to accept connections
+2. Enter the robot's IP address (for example, 192.168.1.100) in the "Connection Settings" area of the application
+3. Confirm that the port is 30004 (the RTDE default port)
+4. Click the "Connect" button
+5. After a successful connection, the status indicator turns green: "● Connected"
 
-### 監控機器人狀態
+### Monitor robot status
 
-連線成功後，以下資訊會即時更新：
-- **TCP 位姿**：X, Y, Z 位置（公尺）及 Rx, Ry, Rz 姿態（弧度）
-- **關節角度**：J1-J6 六個關節的當前角度（弧度）
-- **力/力矩感測器**：Fx, Fy, Fz 力（牛頓）及 Tx, Ty, Tz 力矩（牛頓·公尺）
+After connecting, the following information updates in real time:
 
-### 使用自由驅動模式
+- **TCP pose**: X, Y, Z positions (meters) and Rx, Ry, Rz orientation (radians)
+- **Joint angles**: current angles of the six joints J1-J6 (radians)
+- **Force/torque sensor**: Fx, Fy, Fz forces (newtons) and Tx, Ty, Tz torques (newton-meters)
 
-1. 確保已連線到機器人
-2. 點擊「啟動自由驅動」按鈕
-3. 確認對話框後，機器手臂進入自由驅動模式
-4. 此時可以手動拖曳機器手臂到任意位置
-5. 完成後點擊「停止自由驅動」按鈕
+### Using freedrive mode
 
-> ⚠️ **安全提示**：啟動自由驅動前，請確保機器手臂周圍無障礙物及人員。
+1. Make sure the robot is connected
+2. Click the "Start Freedrive" button
+3. After confirming the dialog, the robot arm enters freedrive mode
+4. You can now drag the robot arm by hand to any position
+5. Click the "Stop Freedrive" button when finished
 
-### 急停功能
+> ⚠️ **Safety notice**: Before enabling freedrive, make sure there are no obstacles or people around the robot arm.
 
-- 緊急情況下，點擊大紅色「⚠ 急停 ⚠」按鈕
-- 機器手臂將立即停止所有運動
-- 急停後需重新確認機器人狀態
+### Emergency stop
 
-### 斷開連線
+- In an emergency, click the large red "⚠ Emergency Stop ⚠" button
+- The robot arm immediately stops all motion
+- After an emergency stop, verify the robot's state before resuming
 
-- 點擊「斷線」按鈕可安全斷開與機器人的連線
-- 關閉應用程式時會自動斷線
+### Disconnect
 
-## 檔案結構
+- Click the "Disconnect" button to safely disconnect from the robot
+- The application disconnects automatically when closed
+
+## File Structure
 
 ```
 ur10e_control_ui/
-├── main.py                  # 主程式入口
-├── robot_controller.py      # 機器人控制核心
-├── ui_mainwindow.py        # 主視窗 UI
-├── config.py               # 設定管理
-├── utils.py                # 工具函數
-├── requirements.txt        # 依賴套件清單
-├── README.md              # 本說明文件
-├── scripts/               # URScript 腳本資料夾
-├── logs/                  # 日誌檔案資料夾
-└── assets/                # 資源檔案（圖示、樣式表等）
+├── main.py                  # Main program entry point
+├── robot_controller.py      # Robot control core
+├── ui_mainwindow.py        # Main window UI
+├── config.py               # Configuration management
+├── utils.py                # Utility functions
+├── requirements.txt        # Dependency list
+├── README.md              # This documentation
+├── scripts/               # URScript scripts folder
+├── logs/                  # Log files folder
+└── assets/                # Resource files (icons, stylesheets, etc.)
 ```
 
-## 設定檔
+## Configuration File
 
-應用程式會在首次運行後生成 `config.json` 設定檔，您可以編輯此檔案來調整預設參數。
+The application generates a `config.json` configuration file after its first run. You can edit this file to adjust the default parameters.
 
-主要設定項目：
-- `connection.ip`：預設 IP 位址
-- `connection.port`：預設連接埠
-- `motion.tcp_speed`：TCP 移動速度（m/s）
-- `motion.joint_speed`：關節移動速度（rad/s）
-- `safety.workspace_limits`：工作空間限制
+Main settings:
 
-## 日誌系統
+- `connection.ip`: default IP address
+- `connection.port`: default port
+- `motion.tcp_speed`: TCP movement speed (m/s)
+- `motion.joint_speed`: joint movement speed (rad/s)
+- `safety.workspace_limits`: workspace limits
 
-- 應用程式會自動記錄操作日誌到 `logs/` 資料夾
-- 日誌包含所有重要操作、錯誤訊息及系統狀態
-- UI 中的「系統訊息」區域也會顯示即時日誌
+## Logging System
 
-## 故障排除
+- The application automatically records operation logs in the `logs/` folder
+- Logs contain all important operations, error messages, and system status
+- The "System Messages" area in the UI also displays live logs
 
-### 無法連線到機器人
+## Troubleshooting
 
-1. 檢查機器人 IP 位址是否正確
-2. 確認電腦與機器人在同一網段
-3. 使用 `ping <robot_ip>` 測試網路連線
-4. 確認機器人已啟動且處於正常模式
-5. 檢查防火牆設定是否阻擋 30004 埠
+### Unable to connect to the robot
 
-### 依賴套件安裝失敗
+1. Check that the robot IP address is correct
+2. Confirm that the computer and robot are on the same subnet
+3. Use `ping <robot_ip>` to test the network connection
+4. Confirm that the robot is powered on and in normal mode
+5. Check whether firewall settings are blocking port 30004
+
+### Dependency installation fails
 
 ```bash
-# 升級 pip
+# Upgrade pip
 pip install --upgrade pip
 
-# 如果 PyQt5 安裝失敗，可嘗試
+# If PyQt5 installation fails, try
 pip install PyQt5 --no-cache-dir
 
-# 如果 ur-rtde 安裝失敗
+# If ur-rtde installation fails
 pip install ur-rtde --no-binary :all:
 ```
 
-### UI 無法顯示或卡住
+### UI does not display or freezes
 
-- 確認已正確安裝 PyQt5
-- 檢查系統是否支援圖形化介面
-- 查看 logs/ 中的日誌檔案以獲取詳細錯誤訊息
+- Confirm that PyQt5 is installed correctly
+- Check that the system supports a graphical interface
+- Check the log files in logs/ for detailed error messages
 
-### 連線後資料不更新
+### Data does not update after connecting
 
-- 確認 RTDE 服務在機器人上已啟用
-- 檢查網路延遲（高延遲會導致更新緩慢）
-- 重新連線嘗試
+- Confirm that the RTDE service is enabled on the robot
+- Check network latency (high latency causes slow updates)
+- Try reconnecting
 
-## 進階功能（後續階段）
+## Advanced Features (Later Stages)
 
-第二階段將加入：
-- 手動 TCP 移動控制（笛卡爾空間）
-- 手動關節移動控制
-- 預設位置管理
-- 力控制模式
-- 腳本執行功能
+Stage 2 will add:
 
-第三階段將加入：
-- 即時資料曲線圖
-- 資料記錄與匯出
-- 3D 視覺化（可選）
+- Manual TCP movement control (Cartesian space)
+- Manual joint movement control
+- Preset position management
+- Force control mode
+- Script execution
 
-## 安全注意事項
+Stage 3 will add:
 
-⚠️ **重要安全提示**
+- Real-time data charts
+- Data logging and export
+- 3D visualization (optional)
 
-1. **人員安全**：操作機器手臂時，確保工作區域內無人員
-2. **工作空間**：了解機器手臂的運動範圍，避免碰撞
-3. **急停裝置**：確保機器人實體急停按鈕隨時可及
-4. **測試環境**：初次使用時，建議在安全環境下測試所有功能
-5. **備份設定**：修改重要設定前先備份
-6. **網路安全**：建議在隔離的區域網路中使用，避免外部存取
+## Safety Notes
 
-## 授權
+⚠️ **Important safety notice**
 
-此專案僅供學習與研究使用。使用者需自行承擔操作機器手臂的所有責任。
+1. **Personnel safety**: Make sure no one is in the work area when operating the robot arm
+2. **Workspace**: Understand the robot arm's range of motion and avoid collisions
+3. **Emergency stop device**: Make sure the robot's physical emergency stop button is always within reach
+4. **Test environment**: When using the system for the first time, test all functions in a safe environment
+5. **Back up settings**: Back up important settings before modifying them
+6. **Network security**: Use the system on an isolated local network to prevent external access
 
-## 技術支援
+## License
 
-如遇到問題，請：
-1. 查看 `logs/` 資料夾中的日誌檔案
-2. 檢查本 README 的故障排除章節
-3. 參考 ur_rtde 官方文件：https://sdurobotics.gitlab.io/ur_rtde/
+This project is intended for learning and research purposes only. Users are solely responsible for all robot operations.
 
-## 版本歷史
+## Technical Support
 
-- **v1.0.0 (2025-11-04)**：第一階段核心功能完成
-  - 基礎連線管理
-  - 即時狀態監控
-  - 自由驅動模式
-  - 急停功能
+If you encounter problems:
 
-## 開發團隊
+1. Check the log files in the `logs/` folder
+2. Review the troubleshooting section of this README
+3. Refer to the official ur_rtde documentation: https://sdurobotics.gitlab.io/ur_rtde/
 
-開發框架：Python + PyQt5 + ur_rtde
-開發階段：第一階段（核心功能）
+## Version History
+
+- **v1.0.0 (2025-11-04)**: Stage 1 core features completed
+  - Basic connection management
+  - Real-time status monitoring
+  - Freedrive mode
+  - Emergency stop
+
+## Development Team
+
+Development framework: Python + PyQt5 + ur_rtde
+Development stage: Stage 1 (core features)
 
 ---
 
-**祝使用愉快！** 🤖
+**Enjoy using the system!** 🤖
